@@ -1,0 +1,18 @@
+{
+  "catA": {
+    "name": "Milo",
+    "boldness": 0.8,
+    "sociability": 0.7,
+    "aggressiveness": 0.3,
+    "curiosity": 0.9,
+    "neuroticism": 0.2
+  },
+  "catB": {
+    "name": "Luna",
+    "boldness": 0.4,
+    "sociability": 0.5,
+    "aggressiveness": 0.2,
+    "curiosity": 0.6,
+    "neuroticism": 0.6
+  }
+}
