@@ -36,26 +36,26 @@ typedef enum {
 #define MEMORY_SIZE 20
 
 typedef struct {
-    int   tick;
+    int   tick;      // global_tick at time of recording
     int   behavior;
-    float valence;  // -1.0 bad, +1.0 good
+    float valence;   // -1.0 bad, +1.0 good
 } MemEntry;
 
 typedef struct {
     // --- Identity ---
     char name[32];
     int  x, y;      // grid position
-    int  dx, dy;    // movement direction
+    int  dx, dy;    // last movement direction (-1, 0, or 1 each axis)
 
     // --- Physiology ---
     float energy;   // 0-100; -0.05/tick awake, +0.3/tick asleep
     float hunger;   // 0-100; +0.01/tick always
     float stress;   // 0-100
-    float arousal;  // 0-100
+    float arousal;  // 0-100; passively decays toward baseline
 
     // --- Panksepp affect system ---
-    float seeking;
-    float play;
+    float seeking;  // passively accumulates; decays after satisfaction
+    float play;     // passively decays toward baseline
     float fear;
     float rage;
     float care;
@@ -76,7 +76,8 @@ typedef struct {
 
     // --- Current behavior ---
     Behavior behavior;
-    int      behavior_ticks;  // ticks in current behavior
+    Behavior prev_behavior;   // previous tick's behavior for ticks-reset detection
+    int      behavior_ticks;  // ticks spent in current behavior
     int      sleep_remaining; // ticks left in sleep bout
     bool     sleeping;
 
@@ -103,5 +104,5 @@ void cat_init(Cat *c, const char *name, int x, int y,
 void update_physiology(Cat *c, float dt, int global_tick);
 void perceive(Cat *self, Cat *other, World *w);
 void vocalize(Cat *c, VocalType v);
-void memory_record(Cat *c, int behavior, float valence);
+void memory_record(Cat *c, int behavior, float valence, int tick);
 int  count_positive_memories(Cat *c);

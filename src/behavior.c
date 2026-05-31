@@ -31,10 +31,11 @@ void move_away(Cat *c, int tx, int ty, World *w)
 }
 
 // --- F4: BEH_SLEEP ---
+// Note: physiology (update_physiology) owns sleeping=true/sleep_remaining.
+// beh_sleep() only drives body-language for an already-sleeping cat.
 void beh_sleep(Cat *c)
 {
     c->behavior = BEH_SLEEP;
-    c->sleeping = true;
     c->ears = EAR_SIDEWAYS;
     c->tail = TAIL_DOWN;
     vocalize(c, VOC_PURR);
@@ -81,6 +82,7 @@ void beh_wiggle(Cat *c)
     c->ears = EAR_FORWARD;
     c->tail = TAIL_LASHING;
     c->arousal += 0.1f;
+    if (c->arousal > 100.0f) c->arousal = 100.0f;
     c->behavior_ticks++;
 }
 
@@ -93,6 +95,7 @@ void beh_pounce(Cat *c, Cat *target, World *w)
     move_toward(c, target->x, target->y, w);
     if (c->x == target->x && c->y == target->y) {
         c->play    += 0.3f;
+        if (c->play > 1.0f) c->play = 1.0f;  // clamp
         c->seeking -= 0.4f;
         if (c->seeking < 0.0f) c->seeking = 0.0f;
     }
@@ -117,7 +120,8 @@ void beh_flee(Cat *c, Cat *threat, World *w)
     c->tail = TAIL_TUCKED;
     vocalize(c, VOC_HISS);
     move_away(c, threat->x, threat->y, w);
-    c->fear    -= 0.05f;  
+    // Fear decays slightly per tick of successful escape (habituation)
+    c->fear -= 0.05f;
     if (c->fear < 0.0f) c->fear = 0.0f;
     c->behavior_ticks++;
 }
@@ -133,9 +137,11 @@ void beh_wrestle(Cat *a, Cat *b)
     if (a->play < 0.0f) a->play = 0.0f;
     if (b->play < 0.0f) b->play = 0.0f;
     a->energy -= 1.0f; b->energy -= 1.0f;
+    if (a->energy < 0.0f) a->energy = 0.0f;
+    if (b->energy < 0.0f) b->energy = 0.0f;
     a->behavior_ticks++; b->behavior_ticks++;
-    memory_record(a, BEH_WRESTLE, +0.8f);
-    memory_record(b, BEH_WRESTLE, +0.8f);
+    memory_record(a, BEH_WRESTLE, +0.8f, 0);
+    memory_record(b, BEH_WRESTLE, +0.8f, 0);
 }
 
 // --- F1: BEH_BUNNY_KICK ---
@@ -146,6 +152,7 @@ void beh_bunny_kick(Cat *c, Cat *target)
     c->tail = TAIL_PUFFED;
     vocalize(c, VOC_GROWL);
     target->stress += 2.0f;
+    if (target->stress > 100.0f) target->stress = 100.0f;  // clamp
     c->play  -= 0.2f;
     c->rage  += 0.1f;
     if (c->play < 0.0f) c->play = 0.0f;
@@ -168,8 +175,8 @@ void beh_allogroom(Cat *giver, Cat *receiver)
     if (giver->care     < 0.0f)  giver->care     = 0.0f;
     if (giver->rage     < 0.0f)  giver->rage     = 0.0f;
     giver->behavior_ticks++;
-    memory_record(giver,    BEH_ALLOGROOM, +0.6f);
-    memory_record(receiver, BEH_ALLOGROOM, +0.6f);
+    memory_record(giver,    BEH_ALLOGROOM, +0.6f, 0);
+    memory_record(receiver, BEH_ALLOGROOM, +0.6f, 0);
 }
 
 bool can_allogroom(Cat *giver, Cat *receiver)
@@ -249,12 +256,16 @@ void interact(Cat *a, Cat *b, World *w)
     } else if (a->rage > 0.6f || b->rage > 0.6f) {
         beh_vocal_hiss(initiator);
         beh_flee(receiver, initiator, w);
-        memory_record(a, BEH_VOCAL_HISS, -0.7f);
-        memory_record(b, BEH_FLEE,       -0.7f);
+        // initiator already records via beh_vocal_hiss; record flee for receiver only
+        memory_record(receiver, BEH_FLEE, -0.7f, 0);
+        memory_record(initiator, BEH_VOCAL_HISS, -0.5f, 0);
     } else {
+        // Stalk approach: keep stalk body-language; boost arousal for pre-pounce
         beh_stalk(initiator, receiver, w);
-        beh_wiggle(initiator);
-        if (rand() % 2) beh_vocal_chirp(initiator);
+        initiator->tail = TAIL_LASHING;  // pre-pounce twitch without overwriting behavior
+        initiator->arousal += 0.1f;
+        if (initiator->arousal > 100.0f) initiator->arousal = 100.0f;
+        if (rand() % 2) vocalize(initiator, VOC_CHIRP);
     }
 
     // Step 4: Allogrooming priority bypass check

@@ -10,8 +10,8 @@
 #include "render.h"
 
 #define TICK_RATE_HZ   10
-#define TICK_NS        (1000000000L / TICK_RATE_HZ)   
-#define DT             (1.0f / TICK_RATE_HZ)          
+#define TICK_NS        (1000000000L / TICK_RATE_HZ)
+#define DT             (1.0f / TICK_RATE_HZ)
 
 static void sleep_until(struct timespec *next)
 {
@@ -25,6 +25,16 @@ static void sleep_until(struct timespec *next)
     if (next->tv_nsec >= 1000000000L) {
         next->tv_nsec -= 1000000000L;
         next->tv_sec++;
+    }
+}
+
+// Helper: assign new behavior and reset ticks when behavior changes
+static inline void set_behavior(Cat *c, Behavior beh)
+{
+    if (c->behavior != beh) {
+        c->prev_behavior   = c->behavior;
+        c->behavior        = beh;
+        c->behavior_ticks  = 0;
     }
 }
 
@@ -64,12 +74,12 @@ int main(void)
         if (!milo.sleeping) {
             FCMOutput fcm_m = fcm_evaluate(&milo, &luna, dist);
             Behavior  beh_m = fcm_select_behavior(&fcm_m, &milo);
-            milo.behavior = beh_m;
+            set_behavior(&milo, beh_m);  // resets ticks on behavior change
         }
         if (!luna.sleeping) {
             FCMOutput fcm_l = fcm_evaluate(&luna, &milo, dist);
             Behavior  beh_l = fcm_select_behavior(&fcm_l, &luna);
-            luna.behavior = beh_l;
+            set_behavior(&luna, beh_l);
         }
 
         // --- Execute behaviors ---
@@ -87,7 +97,7 @@ int main(void)
                 case BEH_FLEE:       beh_flee(&milo, &luna, &world);     break;
                 case BEH_WRESTLE:
                 case BEH_ALLOGROOM:
-                    move_toward(&milo, luna.x, luna.y, &world); // Approach target
+                    move_toward(&milo, luna.x, luna.y, &world);
                     milo.behavior_ticks++;
                     break;
                 case BEH_VOCAL_CHIRP: beh_vocal_chirp(&milo);            break;
@@ -106,7 +116,7 @@ int main(void)
                 case BEH_FLEE:       beh_flee(&luna, &milo, &world);     break;
                 case BEH_WRESTLE:
                 case BEH_ALLOGROOM:
-                    move_toward(&luna, milo.x, milo.y, &world); // Approach target
+                    move_toward(&luna, milo.x, milo.y, &world);
                     luna.behavior_ticks++;
                     break;
                 case BEH_VOCAL_CHIRP: beh_vocal_chirp(&luna);            break;

@@ -73,6 +73,33 @@ static char cat_char(const Cat *c)
     }
 }
 
+// Draw directional markers for a single cat.
+// tail_lash: ~ is placed one cell behind the cat in its movement direction.
+// ear_back:  > is placed one cell ahead of the cat (showing threat direction).
+// Falls back to x-1 / x+1 if dx==0 && dy==0 (cat hasn't moved yet).
+static void render_cat_markers(const Cat *c)
+{
+    // --- Tail lashing marker ---
+    if (c->tail == TAIL_LASHING) {
+        // Behind = opposite of movement direction
+        int tail_dx = (c->dx != 0) ? -c->dx : -1;  // default behind = left
+        int tx = c->x + tail_dx;
+        int ty = c->y + ((c->dy != 0) ? -c->dy : 0);
+        if (tx >= 0 && tx < WORLD_W && ty >= 0 && ty < WORLD_H)
+            mvaddch(ty, tx, '~');
+    }
+
+    // --- Ear back / flat threat marker ---
+    if (c->ears == EAR_BACK || c->ears == EAR_FLAT) {
+        // Ahead = in movement direction (facing the threat)
+        int ear_dx = (c->dx != 0) ? c->dx : 1;   // default ahead = right
+        int ex = c->x + ear_dx;
+        int ey = c->y + ((c->dy != 0) ? c->dy : 0);
+        if (ex >= 0 && ex < WORLD_W && ey >= 0 && ey < WORLD_H)
+            mvaddch(ey, ex, '>');
+    }
+}
+
 void render_cats(const Cat *a, const Cat *b)
 {
     bool wrestling = (a->behavior == BEH_WRESTLE && b->behavior == BEH_WRESTLE);
@@ -82,17 +109,7 @@ void render_cats(const Cat *a, const Cat *b)
         attron(COLOR_PAIR(COLOR_CAT_A));
         if (a->behavior != BEH_SLEEP) attron(A_BOLD);
         mvaddch(a->y, a->x, cat_char(a));
-        // Tail lashing: show ~ behind
-        if (a->tail == TAIL_LASHING) {
-            int tx = a->x - (a->dx >= 0 ? 1 : -1);
-            if (tx >= 0 && tx < WORLD_W)
-                mvaddch(a->y, tx, '~');
-        }
-        // Ears back: show > marker left
-        if (a->ears == EAR_BACK || a->ears == EAR_FLAT) {
-            int ex = a->x - 1;
-            if (ex >= 0) mvaddch(a->y, ex, '>');
-        }
+        render_cat_markers(a);
         attroff(A_BOLD);
         attroff(COLOR_PAIR(COLOR_CAT_A));
     }
@@ -102,15 +119,7 @@ void render_cats(const Cat *a, const Cat *b)
         attron(COLOR_PAIR(COLOR_CAT_B));
         if (b->behavior != BEH_SLEEP) attron(A_BOLD);
         mvaddch(b->y, b->x, cat_char(b));
-        if (b->tail == TAIL_LASHING) {
-            int tx = b->x - (b->dx >= 0 ? 1 : -1);
-            if (tx >= 0 && tx < WORLD_W)
-                mvaddch(b->y, tx, '~');
-        }
-        if (b->ears == EAR_BACK || b->ears == EAR_FLAT) {
-            int ex = b->x - 1;
-            if (ex >= 0) mvaddch(b->y, ex, '>');
-        }
+        render_cat_markers(b);
         attroff(A_BOLD);
         attroff(COLOR_PAIR(COLOR_CAT_B));
     } else {
@@ -120,11 +129,18 @@ void render_cats(const Cat *a, const Cat *b)
         attroff(COLOR_PAIR(COLOR_WRESTLE) | A_BOLD | A_BLINK);
     }
 
-    // Allogrooming: show &> at giver position
+    // Allogrooming: show > at giver's facing cell
     if (a->behavior == BEH_ALLOGROOM) {
+        int ear_dx = (a->dx != 0) ? a->dx : 1;
         attron(COLOR_PAIR(COLOR_CAT_A) | A_BOLD);
-        mvaddch(a->y, a->x + 1, '>');
+        mvaddch(a->y, a->x + ear_dx, '>');
         attroff(COLOR_PAIR(COLOR_CAT_A) | A_BOLD);
+    }
+    if (b->behavior == BEH_ALLOGROOM) {
+        int ear_dx = (b->dx != 0) ? b->dx : 1;
+        attron(COLOR_PAIR(COLOR_CAT_B) | A_BOLD);
+        mvaddch(b->y, b->x + ear_dx, '>');
+        attroff(COLOR_PAIR(COLOR_CAT_B) | A_BOLD);
     }
 }
 
@@ -168,7 +184,6 @@ const char *behavior_name(Behavior b)
 }
 
 // Status bar: lines 22-24 per plan §7
-// Format: "Time MM:SS | A: E85 S12 PLAY | B: E42 S45 FEAR | Rel: +0.3"
 void render_statusbar(const Cat *a, const Cat *b, int sim_time_sec)
 {
     int mm = (sim_time_sec / 60) % 60;

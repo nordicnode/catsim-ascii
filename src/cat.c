@@ -11,7 +11,9 @@ void cat_init(Cat *c, const char *name, int x, int y,
 {
     memset(c, 0, sizeof(*c));
     strncpy(c->name, name, 31);
+    c->name[31] = '\0';  // guarantee null termination
     c->x = x; c->y = y;
+    c->dx = 0; c->dy = 0;
     c->energy    = 80.0f;
     c->hunger    = 20.0f;
     c->stress    = 10.0f;
@@ -30,6 +32,7 @@ void cat_init(Cat *c, const char *name, int x, int y,
     c->ears = EAR_FORWARD;
     c->tail = TAIL_DOWN;
     c->behavior = BEH_IDLE;
+    c->prev_behavior = BEH_IDLE;
     c->sleeping = false;
     c->sleep_remaining = 0;
     c->active_ticks = 0;
@@ -73,11 +76,23 @@ void update_physiology(Cat *c, float dt, int global_tick)
         c->sleep_remaining = 180 + rand() % 121;
     }
 
-    // Passive Accumulators for Desires
+    // Passive accumulation: seeking drive builds while active (resets at satiation via pounce)
     if (c->active_ticks < 3600) {
         c->seeking += 0.0001f * dt;
         if (c->seeking > 1.0f) c->seeking = 1.0f;
+    } else {
+        // After prolonged wakefulness, seeking decays back toward baseline
+        c->seeking -= 0.0001f * dt;
+        if (c->seeking < 0.0f) c->seeking = 0.0f;
     }
+
+    // Passive play decay: play drive returns to baseline over time
+    c->play -= 0.002f * dt;
+    if (c->play < 0.0f) c->play = 0.0f;
+
+    // Passive arousal decay: excitement returns to resting baseline
+    c->arousal -= 0.05f * dt;
+    if (c->arousal < 0.0f) c->arousal = 0.0f;
 
     // Accumulate care drive over time to unlock social requirements
     c->care += 0.002f * dt;
@@ -142,15 +157,16 @@ void vocalize(Cat *c, VocalType v)
     c->vocal_ticks = 3;
 }
 
-void memory_record(Cat *c, int behavior, float valence)
+void memory_record(Cat *c, int behavior, float valence, int tick)
 {
     // Avoid flooding ring buffer with identical sequential events at 10Hz
     int prev_idx = (c->mem_idx - 1 + MEMORY_SIZE) % MEMORY_SIZE;
-    if (c->memory[prev_idx].behavior == behavior && c->memory[prev_idx].valence == valence) {
+    if (c->memory[prev_idx].behavior == behavior
+     && c->memory[prev_idx].valence  == valence) {
         return; // Skip duplicating active persistent loops
     }
 
-    c->memory[c->mem_idx].tick     = 0;  
+    c->memory[c->mem_idx].tick     = tick;
     c->memory[c->mem_idx].behavior = behavior;
     c->memory[c->mem_idx].valence  = valence;
     c->mem_idx = (c->mem_idx + 1) % MEMORY_SIZE;

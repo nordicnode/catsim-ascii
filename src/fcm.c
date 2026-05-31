@@ -62,8 +62,8 @@ FCMOutput fcm_evaluate(const Cat *c, const Cat *other, float other_dist)
     return o;
 }
 
-// Select behavior: argmax(F1..F6) if above threshold 0.3
-// Prevents random flailing (plan §3.2)
+// Select behavior: high-fear/rage overrides checked FIRST, then argmax(F1..F6)
+// Fear override before argmax prevents terrified cats from attempting to groom
 Behavior fcm_select_behavior(const FCMOutput *fcm, const Cat *c)
 {
     // Low energy → forced non-interaction
@@ -71,7 +71,13 @@ Behavior fcm_select_behavior(const FCMOutput *fcm, const Cat *c)
     // Sleeping is handled by physiology, not FCM
     if (c->sleeping)       return BEH_SLEEP;
 
-    float best = 0.3f;  // threshold
+    // High fear/rage overrides evaluated BEFORE argmax so they cannot be
+    // outscored by f6_prolong (prevents terrified cats attempting to groom)
+    if (c->fear > 0.7f) {
+        return (c->rage > 0.4f) ? BEH_VOCAL_HISS : BEH_FLEE;
+    }
+
+    float best = 0.3f;  // threshold – prevents flailing on all-low activations
     Behavior sel = BEH_IDLE;
 
 #define CHECK(score, beh) if ((score) > best) { best = (score); sel = (beh); }
@@ -83,12 +89,7 @@ Behavior fcm_select_behavior(const FCMOutput *fcm, const Cat *c)
     CHECK(fcm->f6_prolong, BEH_ALLOGROOM);
 #undef CHECK
 
-    // High fear overrides → flee/hiss
-    if (c->fear > 0.7f) {
-        return (c->rage > 0.4f) ? BEH_VOCAL_HISS : BEH_FLEE;
-    }
-
-    // High seeking → stalk sequence
+    // High seeking → prefer stalk sequence over raw wrestling
     if (c->seeking > 0.6f && sel == BEH_WRESTLE) {
         return BEH_STALK;
     }
