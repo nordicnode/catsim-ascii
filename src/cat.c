@@ -38,9 +38,6 @@ void cat_init(Cat *c, const char *name, int x, int y,
     c->mem_idx = 0;
 }
 
-// --- Physiology update (10 Hz tick, dt typically 0.1s) ---
-// Sleep: 12-16h/day = ~70% time (Montoya et al. 2023)
-// Short nap pattern, not long blocks (Montoya 2023)
 void update_physiology(Cat *c, float dt, int global_tick)
 {
     c->hunger += 0.01f * dt;
@@ -63,27 +60,28 @@ void update_physiology(Cat *c, float dt, int global_tick)
     if (c->energy < 0.0f) c->energy = 0.0f;
     c->active_ticks++;
 
-    // Force low-energy non-interaction (EAR_SIDEWAYS = withdrawal signal)
+    // Force low-energy non-interaction
     if (c->energy < 20.0f) {
         c->behavior = BEH_IDLE;
         c->ears = EAR_SIDEWAYS;
     }
 
-    // Circadian sleep trigger: every 600 ticks window, if energy<40 → nap
-    // 600 ticks @ 10Hz = 60 real seconds = 10 sim minutes
+    // Circadian sleep trigger
     if ((global_tick % 600 == 0) && c->energy < 40.0f) {
         c->sleeping = true;
         c->behavior = BEH_SLEEP;
-        // 180-300 ticks = 3-5 real minutes = simulates 1-2h nap (Montoya 2023)
         c->sleep_remaining = 180 + rand() % 121;
     }
 
-    // Ensure 30-60 min equivalent activity per simulated day
-    // active_ticks > 3600 → reduce seeking pressure (already active enough)
+    // Passive Accumulators for Desires
     if (c->active_ticks < 3600) {
         c->seeking += 0.0001f * dt;
         if (c->seeking > 1.0f) c->seeking = 1.0f;
     }
+
+    // Accumulate care drive over time to unlock social requirements
+    c->care += 0.002f * dt;
+    if (c->care > 1.0f) c->care = 1.0f;
 
     // Vocal timeout
     if (c->vocal_ticks > 0) {
@@ -92,7 +90,6 @@ void update_physiology(Cat *c, float dt, int global_tick)
     }
 }
 
-// Bresenham line-of-sight check
 static bool has_los(Cat *self, Cat *other, World *w)
 {
     int x0 = self->x, y0 = self->y;
@@ -109,8 +106,6 @@ static bool has_los(Cat *self, Cat *other, World *w)
     return true;
 }
 
-// Perception: cats detect each other within range 8 cells, with LOS
-// Both ears forward → positive prediction (Deputte 2021)
 void perceive(Cat *self, Cat *other, World *w)
 {
     float ddx = (float)(other->x - self->x);
@@ -118,7 +113,6 @@ void perceive(Cat *self, Cat *other, World *w)
     float dist = sqrtf(ddx*ddx + ddy*ddy);
 
     if (dist < 8.0f && has_los(self, other, w)) {
-        // Read other's signals
         if (other->ears == EAR_FORWARD && other->tail != TAIL_PUFFED) {
             self->fear -= 0.1f;
         }
@@ -126,15 +120,12 @@ void perceive(Cat *self, Cat *other, World *w)
             self->fear += 0.15f;
             self->rage += 0.05f;
         }
-        // Critical: both ears forward → predict positive outcome (Deputte 2021)
         if (self->ears == EAR_FORWARD && other->ears == EAR_FORWARD) {
             self->play  += 0.2f;
             self->fear  -= 0.2f;
         }
-        // Proximity raises arousal
         self->arousal += (8.0f - dist) * 0.01f;
     }
-    // Clamp all affects
     if (self->fear   < 0.0f) self->fear   = 0.0f;
     if (self->fear   > 1.0f) self->fear   = 1.0f;
     if (self->play   < 0.0f) self->play   = 0.0f;
@@ -145,8 +136,6 @@ void perceive(Cat *self, Cat *other, World *w)
     if (self->arousal > 100.0f) self->arousal = 100.0f;
 }
 
-// Vocalize: sets vocal state and duration (3 ticks)
-// Reference: Tavernier et al. 2020, Table 1
 void vocalize(Cat *c, VocalType v)
 {
     c->vocal = v;
@@ -155,7 +144,13 @@ void vocalize(Cat *c, VocalType v)
 
 void memory_record(Cat *c, int behavior, float valence)
 {
-    c->memory[c->mem_idx].tick     = 0;  // caller can set global_tick
+    // Avoid flooding ring buffer with identical sequential events at 10Hz
+    int prev_idx = (c->mem_idx - 1 + MEMORY_SIZE) % MEMORY_SIZE;
+    if (c->memory[prev_idx].behavior == behavior && c->memory[prev_idx].valence == valence) {
+        return; // Skip duplicating active persistent loops
+    }
+
+    c->memory[c->mem_idx].tick     = 0;  
     c->memory[c->mem_idx].behavior = behavior;
     c->memory[c->mem_idx].valence  = valence;
     c->mem_idx = (c->mem_idx + 1) % MEMORY_SIZE;

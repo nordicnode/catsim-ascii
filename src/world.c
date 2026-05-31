@@ -2,12 +2,10 @@
 #include <string.h>
 #include "world.h"
 
-// Load map from text file; rows padded with spaces if short
 void world_load(World *w, const char *path)
 {
     FILE *f = fopen(path, "r");
     if (!f) {
-        // Fallback: blank room with border walls
         for (int y = 0; y < WORLD_H; y++) {
             for (int x = 0; x < WORLD_W; x++) {
                 if (y == 0 || y == WORLD_H-1 || x == 0 || x == WORLD_W-1)
@@ -23,7 +21,11 @@ void world_load(World *w, const char *path)
         char line[WORLD_W + 4];
         if (fgets(line, sizeof(line), f)) {
             int len = (int)strlen(line);
-            if (len > 0 && line[len-1] == '\n') len--;
+            // Robustly strip trailing newline and carriage returns (CRLF support)
+            while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
+                line[len-1] = '\0';
+                len--;
+            }
             for (int x = 0; x < WORLD_W; x++) {
                 w->tiles[y][x] = (x < len) ? line[x] : ' ';
             }
